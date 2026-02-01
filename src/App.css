@@ -1,0 +1,125 @@
+/* App-specific styles */
+
+/* Ensure game container fills viewport */
+.game-container {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Smooth transitions between scenes */
+.scene-transition-enter {
+  opacity: 0;
+}
+
+.scene-transition-enter-active {
+  opacity: 1;
+  transition: opacity 500ms ease-in;
+}
+
+.scene-transition-exit {
+  opacity: 1;
+}
+
+.scene-transition-exit-active {
+  opacity: 0;
+  transition: opacity 500ms ease-out;
+}
+
+/* Custom scrollbar for gallery and credits */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #1a1410;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #c9a227;
+  border: 2px solid #1a1410;
+}
+
+/* Animation for floating elements */
+@keyframes float-up {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-50px);
+    opacity: 0;
+  }
+}
+
+.float-up-anim {
+  animation: float-up 1s ease-out forwards;
+}
+
+/* Pulse animation for important elements */
+@keyframes pulse-important {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(201, 162, 39, 0.7);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(201, 162, 39, 0);
+  }
+}
+
+.pulse-important {
+  animation: pulse-important 2s infinite;
+}
+
+/* Glow effect for success states */
+.glow-success {
+  box-shadow: 0 0 20px rgba(74, 124, 89, 0.6);
+}
+
+.glow-danger {
+  box-shadow: 0 0 20px rgba(139, 58, 58, 0.6);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .pixel-title {
+    font-size: 0.9rem;
+  }
+  
+  .pixel-subtitle {
+    font-size: 0.7rem;
+  }
+  
+  .pixel-text {
+    font-size: 0.5rem;
+  }
+  
+  .pixel-btn {
+    font-size: 0.5rem;
+    padding: 0.5rem 1rem;
+  }
+}
+
+/* Prevent text selection in game */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* Loading spinner */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-spinner {
+  border: 4px solid rgba(201, 162, 39, 0.3);
+  border-top: 4px solid #c9a227;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+}
