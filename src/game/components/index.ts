@@ -3,6 +3,7 @@ export { PlayerForm } from './PlayerForm';
 export { SceneTransition } from './SceneTransition';
 export { SceneRenderer } from './SceneRenderer';
 export { DialogBox } from './DialogBox';
+export { StorySummary } from './StorySummary';
 export { CharacterPortrait } from './CharacterPortrait';
 export { MultipleChoiceQuiz } from './MultipleChoiceQuiz';
 export { TrueFalseQuiz } from './TrueFalseQuiz';

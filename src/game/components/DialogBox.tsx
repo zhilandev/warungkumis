@@ -6,6 +6,7 @@ interface DialogBoxProps {
   currentIndex: number;
   onNext: () => void;
   onChoice?: (choiceIndex: number) => void;
+  onSkipAll?: () => void;
 }
 
 export const DialogBox: React.FC<DialogBoxProps> = ({
@@ -13,11 +14,13 @@ export const DialogBox: React.FC<DialogBoxProps> = ({
   currentIndex,
   onNext,
   onChoice,
+  onSkipAll,
 }) => {
   const [displayedText, setDisplayedText] = useState('');
   const [isTyping, setIsTyping] = useState(true);
   const [showChoices, setShowChoices] = useState(false);
   const [isTouch, setIsTouch] = useState(false);
+  const [showSkipConfirm, setShowSkipConfirm] = useState(false);
   
   // Refs untuk mengontrol typing
   const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -25,7 +28,7 @@ export const DialogBox: React.FC<DialogBoxProps> = ({
   const isProcessingRef = useRef(false);
 
   const currentLine = dialog[currentIndex];
-  const typingSpeed = 20; // ms per character
+  const typingSpeed = 25; // ms per character
 
   // Detect touch device
   useEffect(() => {
@@ -89,36 +92,38 @@ export const DialogBox: React.FC<DialogBoxProps> = ({
   }, [currentLine, currentIndex]);
 
   const handleAdvance = useCallback(() => {
+    // TIDAK BISA LANJUT JIKA MASIH TYPING
+    if (isTyping) {
+      return; // Abaikan klik saat masih typing
+    }
+    
     // Prevent double processing
     if (isProcessingRef.current) return;
     
-    if (isTyping) {
-      isProcessingRef.current = true;
-      
-      // Clear typing interval
-      if (typingIntervalRef.current) {
-        clearInterval(typingIntervalRef.current);
-        typingIntervalRef.current = null;
-      }
-      
-      // Show full text immediately
-      setDisplayedText(currentLine.text);
-      setIsTyping(false);
-      
-      if (currentLine.choices) {
-        setShowChoices(true);
-      }
-      
-      // Reset processing flag after a short delay
-      setTimeout(() => {
-        isProcessingRef.current = false;
-      }, 100);
-    } else if (!currentLine.choices) {
+    if (!currentLine.choices) {
       isProcessingRef.current = true;
       onNext();
-      // Reset will happen on next dialog mount
     }
   }, [isTyping, currentLine, onNext]);
+
+  const handleSkipAll = useCallback(() => {
+    setShowSkipConfirm(true);
+  }, []);
+
+  const confirmSkip = useCallback(() => {
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
+    setShowSkipConfirm(false);
+    if (onSkipAll) {
+      onSkipAll();
+    }
+  }, [onSkipAll]);
+
+  const cancelSkip = useCallback(() => {
+    setShowSkipConfirm(false);
+  }, []);
 
   const handleChoice = useCallback((choiceIndex: number) => {
     if (isProcessingRef.current) return;
@@ -147,7 +152,7 @@ export const DialogBox: React.FC<DialogBoxProps> = ({
   }, [handleAdvance, isTouch]);
 
   // Handle touch/click with proper event management
-  const handlePointerDown = useCallback((e: React.PointerEvent | React.TouchEvent | React.MouseEvent) => {
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     handleAdvance();
@@ -176,11 +181,58 @@ export const DialogBox: React.FC<DialogBoxProps> = ({
 
   return (
     <div className="absolute bottom-0 left-0 right-0 z-50 px-2 md:px-4 pb-2 md:pb-4">
+      {/* Skip Button */}
+      {onSkipAll && (
+        <div className="flex justify-end mb-2">
+          <button
+            onClick={handleSkipAll}
+            className="pixel-btn text-[8px] md:text-xs py-1 px-2 md:px-3 opacity-70 hover:opacity-100"
+            style={{ touchAction: 'manipulation' }}
+          >
+            ⏭ SKIP SEMUA
+          </button>
+        </div>
+      )}
+
+      {/* Skip Confirmation Modal */}
+      {showSkipConfirm && (
+        <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
+          <div className="pixel-panel max-w-sm w-full text-center">
+            <p className="pixel-text text-sm md:text-base text-amber-400 mb-4">
+              Lewati semua percakapan?
+            </p>
+            <p className="pixel-text text-[10px] md:text-xs text-gray-400 mb-6">
+              Kamu akan melihat rangkuman cerita dan langsung menuju ke kuis.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={confirmSkip}
+                className="pixel-btn text-xs py-2 px-4"
+              >
+                YA, LEWATI
+              </button>
+              <button
+                onClick={cancelSkip}
+                className="pixel-btn text-xs py-2 px-4 bg-slate-600"
+              >
+                BATAL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Dialog Box */}
       <div 
-        className="pixel-dialog mx-0 md:mx-4 mb-2 md:mb-4 cursor-pointer select-none"
-        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-        onPointerDown={handlePointerDown}
+        className={`pixel-dialog mx-0 md:mx-4 mb-2 md:mb-4 select-none ${
+          isTyping ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'
+        }`}
+        style={{ 
+          touchAction: 'manipulation', 
+          WebkitTapHighlightColor: 'transparent',
+          pointerEvents: isTyping ? 'none' : 'auto'
+        }}
+        onPointerDown={!isTyping ? handlePointerDown : undefined}
       >
         {/* Speaker Name */}
         <div className={`pixel-text text-[10px] md:text-xs mb-2 md:mb-3 ${getSpeakerColor(currentLine.speaker)}`}>
@@ -201,6 +253,15 @@ export const DialogBox: React.FC<DialogBoxProps> = ({
           <div className="flex justify-end mt-2">
             <span className="pixel-text text-[10px] md:text-xs text-amber-400 animate-pulse">
               {isTouch ? '▶ KETUK LANJUTKAN' : '▶ KLIK/ENTER LANJUTKAN'}
+            </span>
+          </div>
+        )}
+
+        {/* Typing Indicator */}
+        {isTyping && (
+          <div className="flex justify-end mt-2">
+            <span className="pixel-text text-[10px] md:text-xs text-gray-500">
+              ⏳ MENGETIK...
             </span>
           </div>
         )}

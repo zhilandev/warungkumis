@@ -3,6 +3,7 @@ import type { GamePhase } from '../types';
 import { DialogBox } from './DialogBox';
 import { CharacterPortrait } from './CharacterPortrait';
 import { SceneTransition } from './SceneTransition';
+import { StorySummary } from './StorySummary';
 import { MultipleChoiceQuiz } from './MultipleChoiceQuiz';
 import { TrueFalseQuiz } from './TrueFalseQuiz';
 import { WordleGame } from './WordleGame';
@@ -54,12 +55,19 @@ const phaseNames: Record<string, string> = {
   epilog: 'EPILOG',
 };
 
-// Mini-game trigger points for each act
-const miniGameTriggerIndex: Record<string, number> = {
-  act1: 5,
-  act2: 5,
-  act3: 5,
-  act4: 5,
+// Quiz components for each phase
+const quizComponents: Record<string, React.FC<{ questions: any[]; onComplete: (score: number) => void }>> = {
+  act1: MultipleChoiceQuiz,
+  act2: TrueFalseQuiz,
+  act3: WordleGame,
+  act4: PickWordGame,
+};
+
+const quizQuestions: Record<string, any[]> = {
+  act1: act1QuizQuestions,
+  act2: act2QuizQuestions,
+  act3: act3QuizQuestions,
+  act4: act4QuizQuestions,
 };
 
 export const SceneRenderer: React.FC<SceneRendererProps> = ({
@@ -69,18 +77,21 @@ export const SceneRenderer: React.FC<SceneRendererProps> = ({
 }) => {
   const [dialogIndex, setDialogIndex] = useState(0);
   const [showMiniGame, setShowMiniGame] = useState(false);
-  const [miniGameCompleted, setMiniGameCompleted] = useState(false);
   const [showTransition, setShowTransition] = useState(true);
+  const [showSummary, setShowSummary] = useState(false);
 
   const background = sceneBackgrounds[phase] || sceneBackgrounds.prolog;
   const dialogs = sceneDialogs[phase] || prologDialog;
+
+  // Check if this phase has a quiz
+  const hasQuiz = ['act1', 'act2', 'act3', 'act4'].includes(phase);
 
   // Reset state when phase changes
   useEffect(() => {
     setDialogIndex(0);
     setShowMiniGame(false);
-    setMiniGameCompleted(false);
     setShowTransition(true);
+    setShowSummary(false);
   }, [phase]);
 
   // Handle transition complete
@@ -90,36 +101,41 @@ export const SceneRenderer: React.FC<SceneRendererProps> = ({
 
   const handleDialogNext = () => {
     if (dialogIndex < dialogs.length - 1) {
-      const nextIndex = dialogIndex + 1;
-      setDialogIndex(nextIndex);
-      
-      // Check if we should trigger mini-game
-      const triggerIndex = miniGameTriggerIndex[phase];
-      const isActWithMiniGame = ['act1', 'act2', 'act3', 'act4'].includes(phase);
-      
-      if (isActWithMiniGame && nextIndex === triggerIndex && !miniGameCompleted) {
-        setShowMiniGame(true);
-      }
+      setDialogIndex(prev => prev + 1);
     } else {
-      // At the end of dialogs, move to next phase
+      // At the end of dialogs, show mini game if available
+      if (hasQuiz) {
+        setShowMiniGame(true);
+      } else {
+        // No quiz for this phase, just complete it
+        onPhaseComplete();
+      }
+    }
+  };
+
+  const handleSkipAll = () => {
+    // Show summary instead of going through all dialogs
+    if (hasQuiz) {
+      setShowSummary(true);
+    } else {
+      // No quiz, just skip to next phase
       onPhaseComplete();
     }
   };
 
+  const handleSummaryContinue = () => {
+    setShowSummary(false);
+    setShowMiniGame(true);
+  };
+
   const handleMiniGameComplete = (score: number) => {
     setShowMiniGame(false);
-    setMiniGameCompleted(true);
     
-    // Pass score to parent (use 5 as default total questions)
+    // Pass score to parent
     onMiniGameComplete(score, 5);
     
-    // Continue to next dialog after mini-game
-    const nextIndex = dialogIndex + 1;
-    if (nextIndex < dialogs.length) {
-      setDialogIndex(nextIndex);
-    } else {
-      onPhaseComplete();
-    }
+    // Move to next phase
+    onPhaseComplete();
   };
 
   const handleChoice = (choiceIndex: number) => {
@@ -128,6 +144,18 @@ export const SceneRenderer: React.FC<SceneRendererProps> = ({
 
   const currentDialog = dialogs[dialogIndex];
   const currentSpeaker = currentDialog?.speaker || 'Narrator';
+
+  // Render quiz based on phase
+  const renderQuiz = () => {
+    if (!hasQuiz) return null;
+
+    const QuizComponent = quizComponents[phase];
+    const questions = quizQuestions[phase];
+
+    if (!QuizComponent || !questions) return null;
+
+    return <QuizComponent questions={questions} onComplete={handleMiniGameComplete} />;
+  };
 
   return (
     <div className="relative w-full h-screen overflow-hidden">
@@ -140,8 +168,16 @@ export const SceneRenderer: React.FC<SceneRendererProps> = ({
         />
       )}
 
-      {/* Main Scene Content */}
-      {!showTransition && (
+      {/* Story Summary (after skip) */}
+      {showSummary && hasQuiz && (
+        <StorySummary onContinue={handleSummaryContinue} />
+      )}
+
+      {/* Mini Games */}
+      {showMiniGame && hasQuiz && renderQuiz()}
+
+      {/* Main Scene Content - Dialog */}
+      {!showTransition && !showSummary && !showMiniGame && (
         <>
           {/* Background */}
           <div 
@@ -156,7 +192,7 @@ export const SceneRenderer: React.FC<SceneRendererProps> = ({
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
 
           {/* Characters */}
-          {currentSpeaker !== 'Narrator' && !showMiniGame && (
+          {currentSpeaker !== 'Narrator' && (
             <CharacterPortrait
               character={currentSpeaker}
               emotion={currentDialog?.emotion}
@@ -166,40 +202,13 @@ export const SceneRenderer: React.FC<SceneRendererProps> = ({
           )}
 
           {/* Dialog */}
-          {!showMiniGame && (
-            <DialogBox
-              dialog={dialogs}
-              currentIndex={dialogIndex}
-              onNext={handleDialogNext}
-              onChoice={handleChoice}
-            />
-          )}
-
-          {/* Mini Games - 4 Types of Quiz */}
-          {showMiniGame && phase === 'act1' && (
-            <MultipleChoiceQuiz 
-              questions={act1QuizQuestions} 
-              onComplete={handleMiniGameComplete} 
-            />
-          )}
-          {showMiniGame && phase === 'act2' && (
-            <TrueFalseQuiz 
-              questions={act2QuizQuestions} 
-              onComplete={handleMiniGameComplete} 
-            />
-          )}
-          {showMiniGame && phase === 'act3' && (
-            <WordleGame 
-              questions={act3QuizQuestions} 
-              onComplete={handleMiniGameComplete} 
-            />
-          )}
-          {showMiniGame && phase === 'act4' && (
-            <PickWordGame 
-              questions={act4QuizQuestions} 
-              onComplete={handleMiniGameComplete} 
-            />
-          )}
+          <DialogBox
+            dialog={dialogs}
+            currentIndex={dialogIndex}
+            onNext={handleDialogNext}
+            onChoice={handleChoice}
+            onSkipAll={hasQuiz ? handleSkipAll : undefined}
+          />
 
           {/* Phase Indicator */}
           <div className="absolute top-4 left-4 z-30">
