@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 interface Question {
   answer: string;
@@ -25,9 +25,18 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
   const [currentGuess, setCurrentGuess] = useState('');
   const [gameOver, setGameOver] = useState(false);
   const [usedLetters, setUsedLetters] = useState<Record<string, 'correct' | 'present' | 'absent' | null>>({});
-
+  const [lastPressedKey, setLastPressedKey] = useState<string | null>(null);
+  
   const question = questions[currentQ];
   const maxGuesses = 6;
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Focus hidden input on mount
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, []);
 
   const getLetterStatus = (letter: string, index: number): 'correct' | 'present' | 'absent' => {
     const answer = question.answer.toUpperCase();
@@ -42,20 +51,30 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
     return 'absent';
   };
 
-  const handleKeyPress = (key: string) => {
+  const handleKeyInput = useCallback((key: string) => {
     if (gameOver) return;
-    if (currentGuess.length < question.answer.length) {
-      setCurrentGuess(prev => prev + key);
+    
+    const upperKey = key.toUpperCase();
+    
+    if (upperKey === 'ENTER') {
+      if (currentGuess.length === question.answer.length) {
+        submitGuess();
+      }
+      return;
     }
-  };
+    
+    if (upperKey === 'BACKSPACE' || upperKey === '⌫') {
+      setCurrentGuess(prev => prev.slice(0, -1));
+      return;
+    }
+    
+    // Only accept letters A-Z
+    if (/^[A-Z]$/.test(upperKey) && currentGuess.length < question.answer.length) {
+      setCurrentGuess(prev => prev + upperKey);
+    }
+  }, [gameOver, currentGuess, question.answer.length]);
 
-  const handleBackspace = () => {
-    if (gameOver) return;
-    setCurrentGuess(prev => prev.slice(0, -1));
-  };
-
-  const handleSubmit = () => {
-    if (gameOver) return;
+  const submitGuess = useCallback(() => {
     if (currentGuess.length !== question.answer.length) return;
 
     const upperGuess = currentGuess.toUpperCase();
@@ -88,7 +107,7 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
     }
 
     setCurrentGuess('');
-  };
+  }, [currentGuess, guesses, question.answer, usedLetters]);
 
   const handleNext = () => {
     if (currentQ < questions.length - 1) {
@@ -97,26 +116,34 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
       setCurrentGuess('');
       setGameOver(false);
       setUsedLetters({});
+      setLastPressedKey(null);
+      // Refocus input
+      setTimeout(() => inputRef.current?.focus(), 100);
     } else {
       onComplete(score);
     }
   };
 
-  // Keyboard support
+  // Handle physical keyboard (PC)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        handleSubmit();
-      } else if (e.key === 'Backspace') {
-        handleBackspace();
-      } else if (e.key.length === 1 && e.key.match(/[a-zA-Z]/)) {
-        handleKeyPress(e.key.toUpperCase());
-      }
+      e.preventDefault();
+      handleKeyInput(e.key);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentGuess, gameOver]);
+  }, [handleKeyInput]);
+
+  // Handle virtual keyboard click
+  const handleVirtualKey = (key: string) => {
+    setLastPressedKey(key);
+    handleKeyInput(key);
+    // Refocus hidden input
+    inputRef.current?.focus();
+    // Clear pressed state after animation
+    setTimeout(() => setLastPressedKey(null), 150);
+  };
 
   const getCellClass = (letter: string, rowIndex: number, colIndex: number): string => {
     const guess = guesses[rowIndex];
@@ -134,21 +161,41 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
   };
 
   const getKeyClass = (key: string): string => {
+    const isPressed = lastPressedKey === key;
     const status = usedLetters[key];
+    
+    let baseClass = 'transition-all duration-100 ';
+    
+    if (isPressed) {
+      baseClass += 'scale-95 ';
+    }
+    
     switch (status) {
       case 'correct':
-        return 'bg-green-600 text-white';
+        return baseClass + 'bg-green-600 text-white border-green-500';
       case 'present':
-        return 'bg-yellow-600 text-white';
+        return baseClass + 'bg-yellow-600 text-white border-yellow-500';
       case 'absent':
-        return 'bg-slate-700 text-gray-500';
+        return baseClass + 'bg-slate-700 text-gray-500 border-slate-600';
       default:
-        return 'bg-slate-600 text-white active:bg-slate-500';
+        return baseClass + 'bg-slate-600 text-white border-slate-500 active:bg-slate-500';
     }
   };
 
   return (
-    <div className="absolute inset-0 z-50 bg-black/95 flex items-center justify-center p-2 md:p-4 overflow-y-auto">
+    <div 
+      className="absolute inset-0 z-50 bg-black/95 flex items-center justify-center p-2 md:p-4 overflow-y-auto"
+      onClick={() => inputRef.current?.focus()}
+    >
+      {/* Hidden input for physical keyboard */}
+      <input
+        ref={inputRef}
+        type="text"
+        className="absolute opacity-0 pointer-events-none"
+        autoFocus
+        onBlur={() => inputRef.current?.focus()}
+      />
+
       <div className="max-w-lg w-full">
         {/* Header */}
         <div className="flex justify-between items-center mb-2 md:mb-4">
@@ -228,15 +275,24 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
 
         {/* Virtual Keyboard */}
         {!gameOver && (
-          <div className="space-y-1 md:space-y-2">
+          <div className="space-y-1 md:space-y-2 select-none">
             {KEYBOARD_ROWS.map((row, rowIndex) => (
               <div key={rowIndex} className="flex justify-center gap-0.5 md:gap-1">
                 {row.map(key => (
                   <button
                     key={key}
-                    onClick={() => handleKeyPress(key)}
-                    onTouchStart={() => handleKeyPress(key)}
-                    className={`w-7 h-9 md:w-8 md:h-10 border-2 pixel-text text-xs md:text-sm transition-all touch-manipulation ${getKeyClass(key)}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleVirtualKey(key);
+                    }}
+                    onTouchStart={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleVirtualKey(key);
+                    }}
+                    className={`w-7 h-9 md:w-8 md:h-10 border-2 pixel-text text-xs md:text-sm ${getKeyClass(key)}`}
+                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                   >
                     {key}
                   </button>
@@ -245,16 +301,39 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
             ))}
             <div className="flex justify-center gap-1 md:gap-2 mt-1 md:mt-2">
               <button
-                onClick={handleBackspace}
-                onTouchStart={handleBackspace}
-                className="px-3 md:px-4 h-9 md:h-10 bg-slate-600 border-2 pixel-text text-[10px] md:text-xs active:bg-slate-500 touch-manipulation"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleVirtualKey('BACKSPACE');
+                }}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleVirtualKey('BACKSPACE');
+                }}
+                className="px-3 md:px-4 h-9 md:h-10 bg-slate-600 border-2 border-slate-500 pixel-text text-[10px] md:text-xs text-white active:bg-slate-500"
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
               >
                 ⌫
               </button>
               <button
-                onClick={handleSubmit}
-                onTouchStart={handleSubmit}
-                className="px-4 md:px-6 h-9 md:h-10 bg-amber-600 border-2 pixel-text text-[10px] md:text-xs active:bg-amber-500 touch-manipulation"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleVirtualKey('ENTER');
+                }}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleVirtualKey('ENTER');
+                }}
+                className={`px-4 md:px-6 h-9 md:h-10 border-2 pixel-text text-[10px] md:text-xs ${
+                  currentGuess.length === question.answer.length 
+                    ? 'bg-amber-600 border-amber-500 text-white active:bg-amber-500' 
+                    : 'bg-slate-700 border-slate-600 text-gray-400'
+                }`}
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+                disabled={currentGuess.length !== question.answer.length}
               >
                 ENTER
               </button>
@@ -277,7 +356,10 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
               </>
             )}
             <p className="pixel-text text-[10px] md:text-xs text-gray-300 mt-2">{question.explanation}</p>
-            <button onClick={handleNext} className="pixel-btn mt-3 md:mt-4 w-full text-[10px] md:text-xs py-2 md:py-3">
+            <button 
+              onClick={handleNext} 
+              className="pixel-btn mt-3 md:mt-4 w-full text-[10px] md:text-xs py-2 md:py-3"
+            >
               {currentQ < questions.length - 1 ? 'SOAL BERIKUTNYA' : 'SELESAI'}
             </button>
           </div>
