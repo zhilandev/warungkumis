@@ -12,12 +12,6 @@ interface WordleGameProps {
   onComplete: (score: number) => void;
 }
 
-const KEYBOARD_ROWS = [
-  ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
-  ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
-  ['Z', 'X', 'C', 'V', 'B', 'N', 'M']
-];
-
 export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete }) => {
   const [currentQ, setCurrentQ] = useState(0);
   const [score, setScore] = useState(0);
@@ -25,18 +19,27 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
   const [currentGuess, setCurrentGuess] = useState('');
   const [gameOver, setGameOver] = useState(false);
   const [usedLetters, setUsedLetters] = useState<Record<string, 'correct' | 'present' | 'absent' | null>>({});
-  const [lastPressedKey, setLastPressedKey] = useState<string | null>(null);
+  const [showKeyboard, setShowKeyboard] = useState(false);
   
   const question = questions[currentQ];
   const maxGuesses = 6;
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Focus hidden input on mount
+  // Focus input on mount and when needed
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, []);
+    const focusInput = () => {
+      if (inputRef.current && !gameOver) {
+        inputRef.current.focus();
+      }
+    };
+    
+    focusInput();
+    
+    // Auto focus periodically to handle keyboard dismissal
+    const interval = setInterval(focusInput, 500);
+    
+    return () => clearInterval(interval);
+  }, [gameOver, currentQ]);
 
   const getLetterStatus = (letter: string, index: number): 'correct' | 'present' | 'absent' => {
     const answer = question.answer.toUpperCase();
@@ -51,28 +54,15 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
     return 'absent';
   };
 
-  const handleKeyInput = useCallback((key: string) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (gameOver) return;
     
-    const upperKey = key.toUpperCase();
+    const value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '');
     
-    if (upperKey === 'ENTER') {
-      if (currentGuess.length === question.answer.length) {
-        submitGuess();
-      }
-      return;
+    if (value.length <= question.answer.length) {
+      setCurrentGuess(value);
     }
-    
-    if (upperKey === 'BACKSPACE' || upperKey === '⌫') {
-      setCurrentGuess(prev => prev.slice(0, -1));
-      return;
-    }
-    
-    // Only accept letters A-Z
-    if (/^[A-Z]$/.test(upperKey) && currentGuess.length < question.answer.length) {
-      setCurrentGuess(prev => prev + upperKey);
-    }
-  }, [gameOver, currentGuess, question.answer.length]);
+  };
 
   const submitGuess = useCallback(() => {
     if (currentGuess.length !== question.answer.length) return;
@@ -107,7 +97,19 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
     }
 
     setCurrentGuess('');
+    
+    // Refocus input
+    setTimeout(() => inputRef.current?.focus(), 100);
   }, [currentGuess, guesses, question.answer, usedLetters]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (currentGuess.length === question.answer.length) {
+        submitGuess();
+      }
+    }
+  };
 
   const handleNext = () => {
     if (currentQ < questions.length - 1) {
@@ -116,33 +118,11 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
       setCurrentGuess('');
       setGameOver(false);
       setUsedLetters({});
-      setLastPressedKey(null);
-      // Refocus input
+      setShowKeyboard(false);
       setTimeout(() => inputRef.current?.focus(), 100);
     } else {
       onComplete(score);
     }
-  };
-
-  // Handle physical keyboard (PC)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      e.preventDefault();
-      handleKeyInput(e.key);
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyInput]);
-
-  // Handle virtual keyboard click
-  const handleVirtualKey = (key: string) => {
-    setLastPressedKey(key);
-    handleKeyInput(key);
-    // Refocus hidden input
-    inputRef.current?.focus();
-    // Clear pressed state after animation
-    setTimeout(() => setLastPressedKey(null), 150);
   };
 
   const getCellClass = (letter: string, rowIndex: number, colIndex: number): string => {
@@ -161,41 +141,21 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
   };
 
   const getKeyClass = (key: string): string => {
-    const isPressed = lastPressedKey === key;
     const status = usedLetters[key];
-    
-    let baseClass = 'transition-all duration-100 ';
-    
-    if (isPressed) {
-      baseClass += 'scale-95 ';
-    }
-    
     switch (status) {
       case 'correct':
-        return baseClass + 'bg-green-600 text-white border-green-500';
+        return 'bg-green-600 text-white';
       case 'present':
-        return baseClass + 'bg-yellow-600 text-white border-yellow-500';
+        return 'bg-yellow-600 text-white';
       case 'absent':
-        return baseClass + 'bg-slate-700 text-gray-500 border-slate-600';
+        return 'bg-slate-700 text-gray-500';
       default:
-        return baseClass + 'bg-slate-600 text-white border-slate-500 active:bg-slate-500';
+        return 'bg-slate-600 text-white';
     }
   };
 
   return (
-    <div 
-      className="absolute inset-0 z-50 bg-black/95 flex items-center justify-center p-2 md:p-4 overflow-y-auto"
-      onClick={() => inputRef.current?.focus()}
-    >
-      {/* Hidden input for physical keyboard */}
-      <input
-        ref={inputRef}
-        type="text"
-        className="absolute opacity-0 pointer-events-none"
-        autoFocus
-        onBlur={() => inputRef.current?.focus()}
-      />
-
+    <div className="absolute inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-2 md:p-4 overflow-y-auto">
       <div className="max-w-lg w-full">
         {/* Header */}
         <div className="flex justify-between items-center mb-2 md:mb-4">
@@ -257,6 +217,39 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
           ))}
         </div>
 
+        {/* Hidden Input for Native Keyboard */}
+        {!gameOver && (
+          <div className="mb-4 text-center">
+            <input
+              ref={inputRef}
+              type="text"
+              value={currentGuess}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              onFocus={() => setShowKeyboard(true)}
+              onBlur={() => setTimeout(() => setShowKeyboard(false), 200)}
+              placeholder="Ketik di sini..."
+              className="w-full max-w-[200px] bg-slate-800 border-2 border-amber-600 p-3 pixel-text text-center text-white placeholder-gray-500 focus:border-amber-400 focus:outline-none"
+              style={{ 
+                fontFamily: 'Press Start 2P, cursive', 
+                fontSize: '0.7rem',
+                caretColor: '#c9a227'
+              }}
+              maxLength={question.answer.length}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="characters"
+              spellCheck="false"
+            />
+            <p className="pixel-text text-[8px] md:text-xs text-gray-500 mt-2">
+              {showKeyboard ? '⌨️ Keyboard aktif' : 'Ketik untuk memunculkan keyboard'}
+            </p>
+            <p className="pixel-text text-[8px] md:text-xs text-amber-400 mt-1">
+              Tekan ENTER untuk submit
+            </p>
+          </div>
+        )}
+
         {/* Legend */}
         <div className="flex justify-center gap-2 md:gap-4 mb-3 md:mb-4 flex-wrap">
           <div className="flex items-center gap-1 md:gap-2">
@@ -273,73 +266,23 @@ export const WordleGame: React.FC<WordleGameProps> = ({ questions, onComplete })
           </div>
         </div>
 
-        {/* Virtual Keyboard */}
-        {!gameOver && (
-          <div className="space-y-1 md:space-y-2 select-none">
-            {KEYBOARD_ROWS.map((row, rowIndex) => (
-              <div key={rowIndex} className="flex justify-center gap-0.5 md:gap-1">
-                {row.map(key => (
-                  <button
-                    key={key}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleVirtualKey(key);
-                    }}
-                    onTouchStart={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleVirtualKey(key);
-                    }}
-                    className={`w-7 h-9 md:w-8 md:h-10 border-2 pixel-text text-xs md:text-sm ${getKeyClass(key)}`}
-                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                  >
-                    {key}
-                  </button>
-                ))}
-              </div>
-            ))}
-            <div className="flex justify-center gap-1 md:gap-2 mt-1 md:mt-2">
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleVirtualKey('BACKSPACE');
-                }}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleVirtualKey('BACKSPACE');
-                }}
-                className="px-3 md:px-4 h-9 md:h-10 bg-slate-600 border-2 border-slate-500 pixel-text text-[10px] md:text-xs text-white active:bg-slate-500"
-                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-              >
-                ⌫
-              </button>
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleVirtualKey('ENTER');
-                }}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleVirtualKey('ENTER');
-                }}
-                className={`px-4 md:px-6 h-9 md:h-10 border-2 pixel-text text-[10px] md:text-xs ${
-                  currentGuess.length === question.answer.length 
-                    ? 'bg-amber-600 border-amber-500 text-white active:bg-amber-500' 
-                    : 'bg-slate-700 border-slate-600 text-gray-400'
-                }`}
-                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                disabled={currentGuess.length !== question.answer.length}
-              >
-                ENTER
-              </button>
-            </div>
+        {/* Used Letters Display */}
+        <div className="mb-4">
+          <p className="pixel-text text-[8px] md:text-xs text-gray-500 mb-2 text-center">HURUF YANG SUDAH DIGUNAKAN:</p>
+          <div className="flex justify-center flex-wrap gap-1">
+            {Object.entries(usedLetters)
+              .filter(([, status]) => status !== null)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([letter]) => (
+                <span
+                  key={letter}
+                  className={`w-6 h-6 md:w-8 md:h-8 flex items-center justify-center pixel-text text-xs md:text-sm ${getKeyClass(letter)}`}
+                >
+                  {letter}
+                </span>
+              ))}
           </div>
-        )}
+        </div>
 
         {/* Game Over */}
         {gameOver && (
